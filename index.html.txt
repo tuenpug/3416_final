@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3416 戰略終端 | 長線．波幅．撈底</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+        .mono { font-family: 'SF Mono', 'JetBrains Mono', monospace; }
+        .active-btn:active { transform: scale(0.96); transition: 0.1s; }
+        input, select { -webkit-appearance: none; border: none; outline: none; border-radius: 12px; }
+        .mode-active { border: 2px solid #0f172a !important; background: #0f172a !important; color: white !important; }
+        .chart-wrapper { position: relative; height: 130px; width: 100%; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-900 pb-12">
+
+    <div class="bg-slate-900 text-white p-6 rounded-b-[3rem] shadow-2xl mb-4">
+        <div class="flex justify-between items-center mb-2 text-[10px] font-bold opacity-40 tracking-widest uppercase">
+            <span>Tactical Terminal v14</span>
+            <div class="flex items-center gap-2">
+                <span id="syncStatus" class="text-emerald-400">● 實時行情</span>
+                <span id="lastSyncTime">--:--</span>
+            </div>
+        </div>
+        <div class="flex items-baseline gap-3 mb-6">
+            <h1 id="totalEquity" class="text-4xl font-black mono tracking-tighter">$0</h1>
+            <span id="totalRoi" class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-xs font-bold">+0.0%</span>
+        </div>
+        <div class="grid grid-cols-2 gap-6 border-t border-white/10 pt-5">
+            <button onclick="syncData()" class="text-left active:opacity-60">
+                <p class="text-[10px] opacity-40 uppercase font-bold mb-1 text-emerald-300 underline underline-offset-4">可用現金 (點擊同步 ↻)</p>
+                <p id="cashBal" class="text-xl font-bold mono text-emerald-400">$0</p>
+            </button>
+            <div class="text-right">
+                <p class="text-[10px] opacity-40 uppercase font-bold mb-1 text-rose-300">本月預計派息</p>
+                <p id="estMonthDiv" class="text-xl font-bold mono text-rose-400">$0</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="aiAdvisor" class="mx-4 mb-4 p-5 rounded-3xl bg-white border border-slate-200 shadow-sm transition-all">
+        <div class="flex items-center gap-2 mb-2">
+            <span class="flex h-2 w-2 rounded-full bg-indigo-500 animate-pulse"></span>
+            <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest">戰略評估 AI Advisor</h3>
+        </div>
+        <div class="flex justify-between items-end">
+            <div class="flex-1 pr-4">
+                <p id="adviceSignal" class="text-xl font-bold text-slate-800 tracking-tight leading-none mb-2">分析中...</p>
+                <p id="adviceDesc" class="text-[10px] text-slate-400 leading-relaxed">正在對比即時股息率與份額配額...</p>
+            </div>
+            <div class="text-right">
+                <span id="yieldValue" class="text-2xl font-black mono text-indigo-600">--%</span>
+                <p class="text-[8px] font-bold text-slate-300 uppercase">預計年息率</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="px-4 space-y-4">
+        <div class="bg-white rounded-3xl p-5 shadow-sm border border-slate-200">
+            <div class="flex items-center gap-6">
+                <div class="w-1/2 chart-wrapper"><canvas id="allocChart"></canvas></div>
+                <div class="w-1/2 space-y-2 text-[10px] font-bold">
+                    <div class="flex justify-between text-blue-500"><span>長線核心 (40%)</span><span id="v1_label" class="mono">0%</span></div>
+                    <div class="flex justify-between text-amber-500"><span>波幅短線 (30%)</span><span id="v2_label" class="mono">0%</span></div>
+                    <div class="flex justify-between text-rose-500"><span>低位撈底 (30%)</span><span id="v3_label" class="mono">0%</span></div>
+                    <div class="flex justify-between text-slate-400 border-t pt-1"><span>總持股價值</span><span id="totalHoldingLabel" class="mono">$0</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-[2.5rem] p-6 shadow-xl border border-slate-200 space-y-4">
+            <div class="grid grid-cols-2 gap-2">
+                <button id="buyModeBtn" onclick="switchMode('BUY')" class="mode-active py-3 rounded-2xl font-black text-xs uppercase tracking-widest">買入</button>
+                <button id="sellModeBtn" onclick="switchMode('SELL')" class="bg-slate-100 text-slate-400 py-3 rounded-2xl font-black text-xs uppercase tracking-widest">沽出</button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+                <div class="bg-emerald-50 p-3 rounded-2xl">
+                    <span class="text-[9px] font-bold text-emerald-600 uppercase">設定月息 $</span>
+                    <input type="number" id="divSetting" value="0.14" step="0.001" oninput="updateUI()" class="bg-transparent font-black mono text-emerald-700 text-lg w-full">
+                </div>
+                <div class="bg-slate-50 p-3 rounded-2xl">
+                    <span class="text-[9px] font-bold text-slate-400 uppercase">記錄日期</span>
+                    <input type="date" id="tradeDate" class="bg-transparent font-bold text-slate-700 text-[11px] w-full mt-1">
+                </div>
+            </div>
+
+            <select id="bucket" onchange="updateUI()" class="w-full p-4 bg-slate-100 rounded-2xl font-bold text-sm text-slate-600">
+                <option value="longTerm">長線核心 (戰略比例 40%)</option>
+                <option value="swing">波幅短線 (戰略比例 30%)</option>
+                <option value="bottom">低位撈底 (戰略比例 30%)</option>
+            </select>
+
+            <div class="grid grid-cols-3 gap-2">
+                <div class="bg-slate-100 rounded-2xl p-2 relative">
+                    <span class="text-[8px] font-bold text-blue-500 uppercase absolute top-2 left-2">成交價</span>
+                    <input type="number" id="price" value="10.60" step="0.01" oninput="updateUI()" class="w-full pt-4 bg-transparent font-mono font-bold text-center">
+                </div>
+                <div class="bg-slate-100 rounded-2xl p-2 relative border-2 border-slate-200">
+                    <span class="text-[8px] font-bold text-slate-400 uppercase absolute top-2 left-2">股數</span>
+                    <input type="number" id="shares" value="1000" oninput="updateUI()" class="w-full pt-4 bg-transparent font-mono font-bold text-center">
+                    <button onclick="setMax()" class="absolute bottom-1 right-1 bg-slate-900 text-white text-[7px] px-1.5 py-0.5 rounded font-bold uppercase active-btn">Max</button>
+                </div>
+                <div class="bg-slate-900 rounded-2xl p-2 flex flex-col justify-center items-center">
+                    <span class="text-[8px] font-bold text-white/30 uppercase absolute top-2 left-2">交易總額</span>
+                    <p id="estAmount" class="font-mono font-bold text-emerald-400 text-[10px] mt-1">$0</p>
+                </div>
+            </div>
+
+            <button onclick="execute()" id="execBtn" class="active-btn w-full bg-slate-900 text-white font-black py-5 rounded-3xl shadow-2xl uppercase text-sm tracking-widest">提交交易記錄</button>
+            <button onclick="collectDiv()" class="active-btn w-full bg-emerald-500 text-white font-black py-4 rounded-3xl shadow-lg uppercase text-xs">💰 記錄本月派息入賬</button>
+        </div>
+
+        <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden mb-12">
+            <div class="px-8 py-5 bg-slate-50 border-b flex justify-between items-center text-[10px] font-black text-slate-400">
+                <span>交易歷史日誌</span>
+                <button onclick="resetData()" class="text-rose-400">重設數據</button>
+            </div>
+            <div id="logBody" class="divide-y divide-slate-50 text-[11px] max-h-60 overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('tradeDate').valueAsDate = new Date();
+        const RATIOS = { longTerm: 0.40, swing: 0.30, bottom: 0.30 };
+        const NAMES = { longTerm: '長線', swing: '波幅', bottom: '撈底' };
+        let currentMode = 'BUY';
+        let allocChart = null;
+
+        let state = JSON.parse(localStorage.getItem('3416_final_v14')) || {
+            cash: 1000000,
+            holding: { longTerm: 0, swing: 0, bottom: 0 },
+            used: { longTerm: 0, swing: 0, bottom: 0 },
+            logs: []
+        };
+
+        function switchMode(mode) {
+            currentMode = mode;
+            document.getElementById('buyModeBtn').className = mode === 'BUY' ? "mode-active py-3 rounded-2xl font-black text-xs transition-all" : "bg-slate-100 text-slate-400 py-3 rounded-2xl font-black text-xs transition-all";
+            document.getElementById('sellModeBtn').className = mode === 'SELL' ? "mode-active py-3 rounded-2xl font-black text-xs transition-all !bg-rose-600 !border-rose-600" : "bg-slate-100 text-slate-400 py-3 rounded-2xl font-black text-xs transition-all";
+            document.getElementById('execBtn').innerText = mode === 'BUY' ? "提交交易記錄 (買入)" : "提交交易記錄 (沽出)";
+            updateUI();
+        }
+
+        async function syncData() {
+            document.getElementById('syncStatus').innerText = "● 同步中...";
+            try {
+                const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/3416.HK`);
+                const data = await res.json();
+                const quote = data.chart.result[0].meta;
+                document.getElementById('price').value = quote.regularMarketPrice.toFixed(2);
+                document.getElementById('lastSyncTime').innerText = new Date().toLocaleTimeString().slice(0,5);
+                document.getElementById('syncStatus').innerText = "● 實時行情";
+                updateUI();
+            } catch (e) { document.getElementById('syncStatus').innerText = "● 手動模式"; }
+        }
+
+        function setMax() {
+            const p = parseFloat(document.getElementById('price').value) || 0;
+            const b = document.getElementById('bucket').value;
+            if (p <= 0) return;
+
+            const totalEq = state.cash + (state.holding.longTerm + state.holding.swing + state.holding.bottom) * p;
+            if (currentMode === 'BUY') {
+                const limit = totalEq * RATIOS[b];
+                const canSpend = Math.min(Math.max(0, limit - state.used[b]), state.cash);
+                document.getElementById('shares').value = Math.floor(canSpend / p);
+            } else {
+                document.getElementById('shares').value = state.holding[b];
+            }
+            updateUI();
+        }
+
+        function updateUI() {
+            const p = parseFloat(document.getElementById('price').value) || 0;
+            const s = parseInt(document.getElementById('shares').value) || 0;
+            const div = parseFloat(document.getElementById('divSetting').value) || 0;
+            const b = document.getElementById('bucket').value;
+
+            const totalHoldVal = (state.holding.longTerm + state.holding.swing + state.holding.bottom) * p;
+            const totalEq = state.cash + totalHoldVal;
+            const yieldVal = p > 0 ? (div * 12 / p * 100) : 0;
+            const roi = ((totalEq - 1000000) / 1000000 * 100).toFixed(1);
+
+            // 更新 AI 評估
+            const signal = document.getElementById('adviceSignal');
+            const desc = document.getElementById('adviceDesc');
+            document.getElementById('yieldValue').innerText = yieldVal.toFixed(1) + "%";
+
+            if (yieldVal >= 16) {
+                signal.innerText = "🚀 激進擴張 (重點用：撈底)"; signal.className = "text-xl font-bold text-rose-600 mb-2";
+                desc.innerText = "年化息率極高，股價處於歷史性低位。建議動用「撈底份額」買入，大幅建立被動收入。";
+            } else if (yieldVal >= 14) {
+                signal.innerText = "📈 穩健增持 (重點用：長線)"; signal.className = "text-xl font-bold text-emerald-600 mb-2";
+                desc.innerText = "回報具吸引力。建議優先填滿「長線份額」，建立防禦性的收息核心。";
+            } else if (yieldVal >= 12) {
+                signal.innerText = "⚖️ 合理持有 (靜候時機)"; signal.className = "text-xl font-bold text-slate-700 mb-2";
+                desc.innerText = "目前價位平衡。建議保留現金，不急於加倉，耐心等待除淨或更佳位置。";
+            } else {
+                signal.innerText = "⚠️ 波段防守 (考慮沽：波幅)"; signal.className = "text-xl font-bold text-amber-600 mb-2";
+                desc.innerText = "息率回落至低點，股價可能短期過熱。建議考慮減持「波幅份額」鎖定利潤。";
+            }
+
+            // 看板更新
+            document.getElementById('totalEquity').innerText = "$" + Math.round(totalEq).toLocaleString();
+            document.getElementById('totalRoi').innerText = (roi >= 0 ? "+" : "") + roi + "%";
+            document.getElementById('cashBal').innerText = "$" + Math.round(state.cash).toLocaleString();
+            document.getElementById('estMonthDiv').innerText = "$" + Math.round((state.holding.longTerm + state.holding.swing + state.holding.bottom)*div).toLocaleString();
+            document.getElementById('totalHoldingLabel').innerText = "$" + Math.round(totalHoldVal).toLocaleString();
+
+            const estAmt = p * s;
+            const estEl = document.getElementById('estAmount');
+            estEl.innerText = "$" + Math.round(estAmt).toLocaleString();
+            
+            if (currentMode === 'BUY') {
+                const limit = totalEq * RATIOS[b];
+                estEl.className = (state.used[b] + estAmt > limit + 1) ? "font-mono font-bold text-rose-500 text-[10px] mt-1" : "font-mono font-bold text-emerald-400 text-[10px] mt-1";
+            } else {
+                estEl.className = (s > state.holding[b]) ? "font-mono font-bold text-rose-500 text-[10px] mt-1" : "font-mono font-bold text-emerald-400 text-[10px] mt-1";
+            }
+
+            // 圖表更新
+            document.getElementById('v1_label').innerText = totalEq > 0 ? ((state.holding.longTerm*p/totalEq)*100).toFixed(0) + "%" : "0%";
+            document.getElementById('v2_label').innerText = totalEq > 0 ? ((state.holding.swing*p/totalEq)*100).toFixed(0) + "%" : "0%";
+            document.getElementById('v3_label').innerText = totalEq > 0 ? ((state.holding.bottom*p/totalEq)*100).toFixed(0) + "%" : "0%";
+
+            if (allocChart) {
+                allocChart.data.datasets[0].data = [state.holding.longTerm*p, state.holding.swing*p, state.holding.bottom*p, state.cash];
+                allocChart.update('none');
+            }
+            localStorage.setItem('3416_final_v14', JSON.stringify(state));
+            renderLogs();
+        }
+
+        function execute() {
+            const p = parseFloat(document.getElementById('price').value);
+            const s = parseInt(document.getElementById('shares').value);
+            const b = document.getElementById('bucket').value;
+            const amt = p * s;
+
+            if (s <= 0) return;
+
+            if (currentMode === 'BUY') {
+                if (state.cash < amt) return alert("可用現金不足");
+                state.cash -= amt; state.holding[b] += s; state.used[b] += amt;
+                log(`買入 ${s.toLocaleString()}股 (${NAMES[b]})`, -amt);
+            } else {
+                if (state.holding[b] < s) return alert("持倉不足");
+                const avgCost = state.used[b] / state.holding[b];
+                state.cash += amt; state.holding[b] -= s; state.used[b] = Math.max(0, state.used[b] - (avgCost * s));
+                log(`沽出 ${s.toLocaleString()}股 (${NAMES[b]})`, amt);
+            }
+            updateUI();
+        }
+
+        function collectDiv() {
+            const div = parseFloat(document.getElementById('divSetting').value);
+            const totalS = state.holding.longTerm + state.holding.swing + state.holding.bottom;
+            if (totalS <= 0) return;
+            const totalDiv = div * totalS;
+            state.cash += totalDiv;
+            log(`收息入賬 (@$${div.toFixed(3)})`, totalDiv);
+            updateUI();
+        }
+
+        function log(msg, amt) {
+            state.logs.unshift({ date: document.getElementById('tradeDate').value, msg, amt });
+            if (state.logs.length > 50) state.logs.pop();
+        }
+
+        function renderLogs() {
+            document.getElementById('logBody').innerHTML = state.logs.map(l => `
+                <div class="p-4 flex justify-between items-center bg-white px-8 border-b border-slate-50">
+                    <div class="flex flex-col"><span class="font-bold text-[9px] text-slate-800 uppercase">${l.msg}</span><span class="text-[7px] text-slate-400 mono">${l.date}</span></div>
+                    <span class="font-black mono text-[11px] ${l.amt>=0?'text-emerald-500':'text-slate-900'}">${l.amt>=0?'+':''}${Math.round(l.amt).toLocaleString()}</span>
+                </div>
+            `).join('');
+        }
+
+        function resetData() { if(confirm("確定重設所有數據？這將清空所有記錄。")) { localStorage.clear(); location.reload(); } }
+
+        window.onload = () => {
+            const ctx = document.getElementById('allocChart').getContext('2d');
+            allocChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: { labels: ['長線','波幅','撈底','現金'], datasets: [{ data: [0,0,0,100], backgroundColor: ['#3b82f6','#f59e0b','#f43f5e','#f1f5f9'], borderWidth: 0 }] },
+                options: { responsive: true, maintainAspectRatio: false, cutout: '80%', plugins: { legend: { display: false } } }
+            });
+            syncData();
+        };
+    </script>
+</body>
+</html>
